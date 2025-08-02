@@ -1,11 +1,17 @@
 package io.trik.capacitor.zeroconf;
 
+import static android.content.Context.NSD_SERVICE;
 import static android.content.Context.WIFI_SERVICE;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Context;
+import android.net.nsd.NsdManager;
+import android.net.nsd.NsdServiceInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
@@ -25,10 +31,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
-import javax.jmdns.JmDNS;
-import javax.jmdns.ServiceEvent;
-import javax.jmdns.ServiceInfo;
-import javax.jmdns.ServiceListener;
 
 public class ZeroConf {
 
@@ -41,9 +43,16 @@ public class ZeroConf {
     private String hostname;
     private RegistrationManager registrationManager;
     private BrowserManager browserManager;
+    private Context context;
+    private NsdManager nsdManager;
+    private Handler mainHandler;
 
     public void initialize(Activity activity) {
-        WifiManager wifi = (WifiManager) activity.getApplicationContext().getSystemService(WIFI_SERVICE);
+        this.context = activity.getApplicationContext();
+        this.nsdManager = (NsdManager) context.getSystemService(NSD_SERVICE);
+        this.mainHandler = new Handler(Looper.getMainLooper());
+
+        WifiManager wifi = (WifiManager) context.getSystemService(WIFI_SERVICE);
         lock = wifi.createMulticastLock("ZeroConfPluginLock");
         lock.setReferenceCounted(false);
 
@@ -90,8 +99,9 @@ public class ZeroConf {
         return hostname;
     }
 
-    public ServiceInfo registerService(String type, String domain, String name, int port, JSObject props, String addressFamily)
-        throws IOException, RuntimeException {
+    public NsdServiceInfo registerService(String type, String domain, String name, int port, JSObject props,
+            String addressFamily)
+            throws RuntimeException {
         Log.d(TAG, "Register " + type + domain);
         if (registrationManager == null) {
             List<InetAddress> selectedAddresses = addresses;
@@ -100,10 +110,10 @@ public class ZeroConf {
             } else if ("ipv4".equalsIgnoreCase(addressFamily)) {
                 selectedAddresses = ipv4Addresses;
             }
-            registrationManager = new RegistrationManager(selectedAddresses, hostname);
+            registrationManager = new RegistrationManager(nsdManager, selectedAddresses, hostname);
         }
 
-        ServiceInfo service = registrationManager.register(type, domain, name, port, props);
+        NsdServiceInfo service = registrationManager.register(type, domain, name, port, props);
         if (service == null) {
             throw new RuntimeException("Failed to register");
         }
@@ -118,7 +128,7 @@ public class ZeroConf {
         }
     }
 
-    public void stop() throws IOException {
+    public void stop() {
         Log.d(TAG, "Stop");
 
         final RegistrationManager rm = registrationManager;
@@ -129,7 +139,7 @@ public class ZeroConf {
     }
 
     public void watchService(String type, String domain, String addressFamily, ZeroConfServiceWatchCallback callback)
-        throws IOException, RuntimeException {
+            throws RuntimeException {
         Log.d(TAG, "Watch " + type + domain);
 
         if (browserManager == null) {
@@ -139,9 +149,9 @@ public class ZeroConf {
             } else if ("ipv4".equalsIgnoreCase(addressFamily)) {
                 selectedAddresses = ipv4Addresses;
             }
-            browserManager = new BrowserManager(selectedAddresses, hostname);
-            browserManager.watch(type, domain, callback);
+            browserManager = new BrowserManager(nsdManager, selectedAddresses, hostname);
         }
+        browserManager.watch(type, domain, callback);
     }
 
     public void unwatchService(String type, String domain) {
@@ -151,7 +161,7 @@ public class ZeroConf {
         }
     }
 
-    public void close() throws IOException {
+    public void close() {
         Log.d(TAG, "Close");
 
         if (browserManager != null) {
@@ -163,125 +173,194 @@ public class ZeroConf {
 
     private static class RegistrationManager {
 
-        private final List<JmDNS> publishers = new ArrayList<>();
+        private final NsdManager nsdManager;
+        private final Map<String, NsdServiceInfo> registeredServices = new HashMap<>();
+        private final Map<String, NsdManager.RegistrationListener> registrationListeners = new HashMap<>();
 
-        public RegistrationManager(List<InetAddress> addresses, String hostname) throws IOException {
-            if (addresses == null || addresses.size() == 0) {
-                publishers.add(JmDNS.create(null, hostname));
-            } else {
-                for (InetAddress address : addresses) {
-                    publishers.add(JmDNS.create(address, hostname));
-                }
-            }
+        public RegistrationManager(NsdManager nsdManager, List<InetAddress> addresses, String hostname) {
+            this.nsdManager = nsdManager;
         }
 
-        public ServiceInfo register(String type, String domain, String name, int port, JSObject props) throws IOException {
-            HashMap<String, String> txtRecord = new HashMap<>();
+        public NsdServiceInfo register(String type, String domain, String name, int port, JSObject props) {
+            String serviceKey = type + domain + name;
+
+            NsdServiceInfo serviceInfo = new NsdServiceInfo();
+            serviceInfo.setServiceName(name);
+            serviceInfo.setServiceType(type);
+            serviceInfo.setPort(port);
+
+            // Add TXT records if provided
             if (props != null) {
+                Map<String, String> txtRecord = new HashMap<>();
                 Iterator<String> iterator = props.keys();
                 while (iterator.hasNext()) {
                     String key = iterator.next();
-                    txtRecord.put(key, props.getString(key));
+                    String value = props.getString(key);
+                    if (value != null) {
+                        txtRecord.put(key, value);
+                    }
+                }
+
+                // Convert map to attributes for NsdServiceInfo
+                for (Map.Entry<String, String> entry : txtRecord.entrySet()) {
+                    serviceInfo.setAttribute(entry.getKey(), entry.getValue());
                 }
             }
 
-            ServiceInfo aService = null;
-            for (JmDNS publisher : publishers) {
-                ServiceInfo service = ServiceInfo.create(type + domain, name, port, 0, 0, txtRecord);
-                try {
-                    publisher.registerService(service);
-                    aService = service;
-                } catch (IOException e) {
-                    Log.e(TAG, e.getMessage(), e);
+            NsdManager.RegistrationListener registrationListener = new NsdManager.RegistrationListener() {
+                @Override
+                public void onServiceRegistered(NsdServiceInfo nsdServiceInfo) {
+                    Log.d(TAG, "Service registered: " + nsdServiceInfo.getServiceName());
+                    registeredServices.put(serviceKey, nsdServiceInfo);
                 }
-            }
-            // returns only one of the ServiceInfo instances!
-            return aService;
+
+                @Override
+                public void onRegistrationFailed(NsdServiceInfo serviceInfo, int errorCode) {
+                    Log.e(TAG, "Service registration failed: " + serviceInfo.getServiceName() + " Error: " + errorCode);
+                }
+
+                @Override
+                public void onServiceUnregistered(NsdServiceInfo nsdServiceInfo) {
+                    Log.d(TAG, "Service unregistered: " + nsdServiceInfo.getServiceName());
+                    registeredServices.remove(serviceKey);
+                }
+
+                @Override
+                public void onUnregistrationFailed(NsdServiceInfo serviceInfo, int errorCode) {
+                    Log.e(TAG,
+                            "Service unregistration failed: " + serviceInfo.getServiceName() + " Error: " + errorCode);
+                }
+            };
+
+            registrationListeners.put(serviceKey, registrationListener);
+            nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener);
+
+            return serviceInfo;
         }
 
         public void unregister(String type, String domain, String name) {
-            for (JmDNS publisher : publishers) {
-                ServiceInfo serviceInfo = publisher.getServiceInfo(type + domain, name, 5000);
-                if (serviceInfo != null) {
-                    publisher.unregisterService(serviceInfo);
-                }
+            String serviceKey = type + domain + name;
+            NsdManager.RegistrationListener listener = registrationListeners.get(serviceKey);
+            if (listener != null) {
+                nsdManager.unregisterService(listener);
+                registrationListeners.remove(serviceKey);
             }
         }
 
-        public void stop() throws IOException {
-            for (JmDNS publisher : publishers) {
-                publisher.close();
+        public void stop() {
+            for (NsdManager.RegistrationListener listener : registrationListeners.values()) {
+                try {
+                    nsdManager.unregisterService(listener);
+                } catch (Exception e) {
+                    Log.e(TAG, "Error unregistering service", e);
+                }
             }
+            registrationListeners.clear();
+            registeredServices.clear();
         }
     }
 
-    private class BrowserManager implements ServiceListener {
-
-        private final List<JmDNS> browsers = new ArrayList<>();
-
+    private class BrowserManager {
+        private String st;
+        private final NsdManager nsdManager;
         private final Map<String, ZeroConfServiceWatchCallback> calls = new HashMap<>();
+        private final Map<String, NsdManager.DiscoveryListener> discoveryListeners = new HashMap<>();
 
-        public BrowserManager(List<InetAddress> addresses, String hostname) throws IOException {
+        public BrowserManager(NsdManager nsdManager, List<InetAddress> addresses, String hostname) {
+            this.nsdManager = nsdManager;
             lock.acquire();
-
-            if (addresses == null || addresses.size() == 0) {
-                browsers.add(JmDNS.create(null, hostname));
-            } else {
-                for (InetAddress address : addresses) {
-                    browsers.add(JmDNS.create(address, hostname));
-                }
-            }
         }
 
         private void watch(String type, String domain, ZeroConfServiceWatchCallback callback) {
-            calls.put(type + domain, callback);
+            String serviceKey = type + domain;
+            calls.put(serviceKey, callback);
 
-            for (JmDNS browser : browsers) {
-                browser.addServiceListener(type + domain, this);
-            }
+            NsdManager.DiscoveryListener discoveryListener = new NsdManager.DiscoveryListener() {
+                @Override
+                public void onDiscoveryStarted(String regType) {
+                    Log.d(TAG, "Service discovery started for: " + regType);
+                }
+
+                @Override
+                public void onServiceFound(NsdServiceInfo service) {
+                    Log.d(TAG, "Service found: " + service.getServiceName());
+
+                    // Resolve the service to get full details before sending callbacks
+                    nsdManager.resolveService(service, new NsdManager.ResolveListener() {
+                        @Override
+                        public void onResolveFailed(NsdServiceInfo serviceInfo, int errorCode) {
+                            Log.e(TAG, "Resolve failed for: " + serviceInfo.getServiceName() + " Error: " + errorCode);
+                            // Still send the added callback even if resolve fails, but with limited info
+                            sendCallback(ZeroConfServiceWatchCallback.ADDED, serviceInfo);
+                        }
+
+                        @Override
+                        public void onServiceResolved(NsdServiceInfo serviceInfo) {
+                            Log.d(TAG, "Service resolved: " + serviceInfo.getServiceName() +
+                                    ", Port: " + serviceInfo.getPort() +
+                                    ", Host: "
+                                    + (serviceInfo.getHost() != null ? serviceInfo.getHost().toString() : "null"));
+                            // Send both ADDED and RESOLVED callbacks with the resolved service info
+                            sendCallback(ZeroConfServiceWatchCallback.ADDED, serviceInfo);
+                            sendCallback(ZeroConfServiceWatchCallback.RESOLVED, serviceInfo);
+                        }
+                    });
+                }
+
+                @Override
+                public void onServiceLost(NsdServiceInfo service) {
+                    Log.d(TAG, "Service lost: " + service.getServiceName());
+                    sendCallback(ZeroConfServiceWatchCallback.REMOVED, service);
+                }
+
+                @Override
+                public void onDiscoveryStopped(String serviceType) {
+                    Log.d(TAG, "Discovery stopped for: " + serviceType);
+                }
+
+                @Override
+                public void onStartDiscoveryFailed(String serviceType, int errorCode) {
+                    Log.e(TAG, "Discovery failed for: " + serviceType + " Error: " + errorCode);
+                }
+
+                @Override
+                public void onStopDiscoveryFailed(String serviceType, int errorCode) {
+                    Log.e(TAG, "Stop discovery failed for: " + serviceType + " Error: " + errorCode);
+                }
+            };
+
+            discoveryListeners.put(serviceKey, discoveryListener);
+            nsdManager.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, discoveryListener);
         }
 
         private void unwatch(String type, String domain) {
-            calls.remove(type + domain);
+            String serviceKey = type + domain;
+            calls.remove(serviceKey);
 
-            for (JmDNS browser : browsers) {
-                browser.removeServiceListener(type + domain, this);
+            NsdManager.DiscoveryListener listener = discoveryListeners.get(serviceKey);
+            if (listener != null) {
+                nsdManager.stopServiceDiscovery(listener);
+                discoveryListeners.remove(serviceKey);
             }
         }
 
-        private void close() throws IOException {
+        private void close() {
             lock.release();
-
             calls.clear();
 
-            for (JmDNS browser : browsers) {
-                browser.close();
+            for (NsdManager.DiscoveryListener listener : discoveryListeners.values()) {
+                try {
+                    nsdManager.stopServiceDiscovery(listener);
+                } catch (Exception e) {
+                    Log.e(TAG, "Error stopping service discovery", e);
+                }
             }
+            discoveryListeners.clear();
         }
 
-        @Override
-        public void serviceResolved(ServiceEvent ev) {
-            Log.d(TAG, "Resolved");
-
-            sendCallback(ZeroConfServiceWatchCallback.RESOLVED, ev.getInfo());
-        }
-
-        @Override
-        public void serviceRemoved(ServiceEvent ev) {
-            Log.d(TAG, "Removed");
-
-            sendCallback(ZeroConfServiceWatchCallback.REMOVED, ev.getInfo());
-        }
-
-        @Override
-        public void serviceAdded(ServiceEvent ev) {
-            Log.d(TAG, "Added");
-
-            sendCallback(ZeroConfServiceWatchCallback.ADDED, ev.getInfo());
-        }
-
-        public void sendCallback(String action, ServiceInfo service) {
-            ZeroConfServiceWatchCallback callback = calls.get(service.getType());
+        public void sendCallback(String action, NsdServiceInfo service) {
+            String st = service.getServiceType() + ".local.";
+            ZeroConfServiceWatchCallback callback = calls.get(st.substring(1));
             if (callback == null) {
                 return;
             }
@@ -290,7 +369,8 @@ public class ZeroConf {
     }
 
     private static String getHostNameFromActivity(Activity activity)
-        throws NoSuchMethodException, SecurityException, IllegalAccessException, IllegalArgumentException, InvocationTargetException {
+            throws NoSuchMethodException, SecurityException, IllegalAccessException, IllegalArgumentException,
+            InvocationTargetException {
         @SuppressLint("DiscouragedPrivateApi")
         Method getString = Build.class.getDeclaredMethod("getString", String.class);
         getString.setAccessible(true);

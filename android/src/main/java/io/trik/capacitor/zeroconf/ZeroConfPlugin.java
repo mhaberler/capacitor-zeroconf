@@ -1,6 +1,8 @@
 package io.trik.capacitor.zeroconf;
 
 import android.Manifest;
+import android.net.nsd.NsdServiceInfo;
+import android.util.Log;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -8,10 +10,8 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
-import java.io.IOException;
 import java.net.InetAddress;
-import java.util.Enumeration;
-import javax.jmdns.ServiceInfo;
+import java.util.Map;
 
 @CapacitorPlugin(
     name = "ZeroConf",
@@ -59,13 +59,13 @@ public class ZeroConfPlugin extends Plugin {
         getBridge()
             .executeOnMainThread(() -> {
                 try {
-                    ServiceInfo service = implementation.registerService(type, domain, name, port, props, addressFamily);
+                    NsdServiceInfo service = implementation.registerService(type, domain, name, port, props, addressFamily);
                     JSObject status = new JSObject();
                     status.put("action", "registered");
                     status.put("service", jsonifyService(service));
 
                     call.resolve(status);
-                } catch (IOException | RuntimeException e) {
+                } catch (RuntimeException e) {
                     call.reject(e.getMessage());
                 }
             });
@@ -88,11 +88,8 @@ public class ZeroConfPlugin extends Plugin {
     public void stop(PluginCall call) {
         getBridge()
             .executeOnMainThread(() -> {
-                try {
-                    implementation.stop();
-                } catch (IOException e) {
-                    call.reject("Error: " + e.getMessage());
-                }
+                implementation.stop();
+                call.resolve();
             });
     }
 
@@ -118,7 +115,7 @@ public class ZeroConfPlugin extends Plugin {
                             call.resolve(status);
                         }
                     );
-                } catch (IOException | RuntimeException e) {
+                } catch (RuntimeException e) {
                     call.reject("Error: " + e.getMessage());
                 }
             });
@@ -143,48 +140,70 @@ public class ZeroConfPlugin extends Plugin {
     public void close(PluginCall call) {
         getBridge()
             .executeOnMainThread(() -> {
-                try {
-                    implementation.close();
-                    call.resolve();
-                } catch (IOException e) {
-                    call.reject("Error: " + e.getMessage());
-                }
+                implementation.close();
+                call.resolve();
             });
     }
 
-    private static JSObject jsonifyService(ServiceInfo service) {
+    private static JSObject jsonifyService(NsdServiceInfo service) {
         JSObject obj = new JSObject();
 
-        String domain = service.getDomain() + ".";
+        // Extract domain from service type (NSD doesn't separate domain like JmDNS)
+        String serviceType = service.getServiceType();
+        String domain = "local."; // Default domain for mDNS
+        String type = serviceType;
+        
         obj.put("domain", domain);
-        obj.put("type", service.getType().replace(domain, ""));
-        obj.put("name", service.getName());
+        obj.put("type", type);
+        obj.put("name", service.getServiceName());
         obj.put("port", service.getPort());
-        obj.put("hostname", service.getServer());
-
-        JSArray ipv4Addresses = new JSArray();
-        InetAddress[] inet4Addresses = service.getInet4Addresses();
-        for (InetAddress inet4Address : inet4Addresses) {
-            if (inet4Address != null) {
-                ipv4Addresses.put(inet4Address.getHostAddress());
+        
+        // Debug logging
+        Log.d("ZeroConfPlugin", "Service: " + service.getServiceName() + 
+                ", Port: " + service.getPort() + 
+                ", Host: " + (service.getHost() != null ? service.getHost().toString() : "null"));
+        
+        // Get hostname from host address
+        InetAddress host = service.getHost();
+        if (host != null) {
+            obj.put("hostname", host.getHostName());
+            
+            // For NsdServiceInfo, we only get one address at a time
+            JSArray ipv4Addresses = new JSArray();
+            JSArray ipv6Addresses = new JSArray();
+            
+            String hostAddress = host.getHostAddress();
+            if (hostAddress != null) {
+                if (hostAddress.contains(":")) {
+                    // IPv6 address
+                    ipv6Addresses.put(hostAddress);
+                } else {
+                    // IPv4 address
+                    ipv4Addresses.put(hostAddress);
+                }
             }
+            
+            obj.put("ipv4Addresses", ipv4Addresses);
+            obj.put("ipv6Addresses", ipv6Addresses);
+        } else {
+            obj.put("hostname", "");
+            obj.put("ipv4Addresses", new JSArray());
+            obj.put("ipv6Addresses", new JSArray());
         }
-        obj.put("ipv4Addresses", ipv4Addresses);
 
-        JSArray ipv6Addresses = new JSArray();
-        InetAddress[] inet6Addresses = service.getInet6Addresses();
-        for (InetAddress inet6Address : inet6Addresses) {
-            if (inet6Address != null) {
-                ipv6Addresses.put(inet6Address.getHostAddress());
-            }
-        }
-        obj.put("ipv6Addresses", ipv6Addresses);
-
+        // Get TXT record attributes
         JSObject props = new JSObject();
-        Enumeration<String> names = service.getPropertyNames();
-        while (names.hasMoreElements()) {
-            String name = names.nextElement();
-            props.put(name, service.getPropertyString(name));
+        Map<String, byte[]> attributes = service.getAttributes();
+        if (attributes != null) {
+            for (Map.Entry<String, byte[]> entry : attributes.entrySet()) {
+                String key = entry.getKey();
+                byte[] value = entry.getValue();
+                if (value != null) {
+                    props.put(key, new String(value));
+                } else {
+                    props.put(key, "");
+                }
+            }
         }
         obj.put("txtRecord", props);
 
