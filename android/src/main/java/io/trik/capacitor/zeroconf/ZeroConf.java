@@ -273,6 +273,8 @@ public class ZeroConf {
 
         private void watch(String type, String domain, ZeroConfServiceWatchCallback callback) {
             String serviceKey = type + domain;
+            Log.d(TAG, "watch record: " + serviceKey);
+
             calls.put(serviceKey, callback);
 
             NsdManager.DiscoveryListener discoveryListener = new NsdManager.DiscoveryListener() {
@@ -359,9 +361,10 @@ public class ZeroConf {
         }
 
         public void sendCallback(String action, NsdServiceInfo service) {
-            String st = service.getServiceType() + ".local.";
-            ZeroConfServiceWatchCallback callback = calls.get(st.substring(1));
+            String st = service.getServiceType().replaceAll("^\\.+|\\.+$", "") + ".local.";
+            ZeroConfServiceWatchCallback callback = calls.get(st);
             if (callback == null) {
+                Log.d(TAG, "sendCallback: no callback for " + st);
                 return;
             }
             callback.serviceBrowserEvent(action, service);
