@@ -1,6 +1,6 @@
 {
-  "name": "capacitor-zeroconf",
-  "version": "5.0.0",
+  "name": "@mhaberler/capacitor-zeroconf-nsd",
+  "version": "5.0.1",
   "description": "Capacitor ZeroConf plugin",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
@@ -11,7 +11,7 @@
     "android/build.gradle",
     "dist/",
     "ios/Plugin/",
-    "CapacitorZeroconf.podspec",
+    "CapacitorZeroconfNsd.podspec",
     "electron"
   ],
   "author": "Marco Marche",
