@@ -1,4 +1,4 @@
-import * as bonjourMod from 'bonjour';
+import bonjour from 'bonjour';
 import type { Browser, Bonjour, RemoteService, Service } from 'bonjour';
 import { EventEmitter } from 'events';
 import { hostname } from 'os';
@@ -15,8 +15,6 @@ import type {
 } from '../../src/definitions';
 
 let callbackId = 0;
-
-const bonjour = ((bonjourMod as any).default || bonjourMod) as typeof bonjourMod;
 
 const bonjourToZeroConfService = (service: RemoteService): ZeroConfService => ({
   domain: service.host,
@@ -76,7 +74,7 @@ export class ZeroConf extends EventEmitter implements ZeroConfPlugin {
   unregister(request: ZeroConfUnregisterRequest): Promise<void> {
     return new Promise((resolve) => {
       const serviceIdx = this._services.findIndex(
-        (service) => service.name === request.name && service.type === request.type && service.fqdn == request.domain
+        (service) => service.name === request.name && service.type === request.type && service.fqdn == request.domain,
       );
       if (serviceIdx > -1) {
         const service = this._services[serviceIdx];
@@ -106,13 +104,13 @@ export class ZeroConf extends EventEmitter implements ZeroConfPlugin {
         this.emit('discover', {
           action: 'added',
           service: bonjourToZeroConfService(service),
-        })
+        }),
       );
       browser.on('down', (service) =>
         this.emit('discover', {
           action: 'removed',
           service: bonjourToZeroConfService(service),
-        })
+        }),
       );
       this._browsers[id] = { request, browser };
       browser.services.forEach((service) => {

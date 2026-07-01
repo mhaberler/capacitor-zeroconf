@@ -18,7 +18,9 @@ import java.util.Map;
     permissions = {
         @Permission(
             strings = {
-                Manifest.permission.ACCESS_WIFI_STATE, Manifest.permission.CHANGE_WIFI_MULTICAST_STATE, Manifest.permission.INTERNET
+                Manifest.permission.ACCESS_WIFI_STATE,
+                Manifest.permission.CHANGE_WIFI_MULTICAST_STATE,
+                Manifest.permission.INTERNET
             },
             alias = "internet"
         )
@@ -56,19 +58,18 @@ public class ZeroConfPlugin extends Plugin {
         final JSObject props = call.getObject("props");
         final String addressFamily = call.getString("addressFamily");
 
-        getBridge()
-            .executeOnMainThread(() -> {
-                try {
-                    NsdServiceInfo service = implementation.registerService(type, domain, name, port, props, addressFamily);
-                    JSObject status = new JSObject();
-                    status.put("action", "registered");
-                    status.put("service", jsonifyService(service));
+        getBridge().executeOnMainThread(() -> {
+            try {
+                NsdServiceInfo service = implementation.registerService(type, domain, name, port, props, addressFamily);
+                JSObject status = new JSObject();
+                status.put("action", "registered");
+                status.put("service", jsonifyService(service));
 
-                    call.resolve(status);
-                } catch (RuntimeException e) {
-                    call.reject(e.getMessage());
-                }
-            });
+                call.resolve(status);
+            } catch (RuntimeException e) {
+                call.reject(e.getMessage());
+            }
+        });
     }
 
     @PluginMethod
@@ -77,20 +78,18 @@ public class ZeroConfPlugin extends Plugin {
         final String domain = call.getString("domain");
         final String name = call.getString("name");
 
-        getBridge()
-            .executeOnMainThread(() -> {
-                implementation.unregisterService(type, domain, name);
-                call.resolve();
-            });
+        getBridge().executeOnMainThread(() -> {
+            implementation.unregisterService(type, domain, name);
+            call.resolve();
+        });
     }
 
     @PluginMethod
     public void stop(PluginCall call) {
-        getBridge()
-            .executeOnMainThread(() -> {
-                implementation.stop();
-                call.resolve();
-            });
+        getBridge().executeOnMainThread(() -> {
+            implementation.stop();
+            call.resolve();
+        });
     }
 
     @PluginMethod(returnType = PluginMethod.RETURN_CALLBACK)
@@ -99,26 +98,20 @@ public class ZeroConfPlugin extends Plugin {
         final String domain = call.getString("domain");
         final String addressFamily = call.getString("addressFamily");
 
-        getBridge()
-            .executeOnMainThread(() -> {
-                try {
-                    implementation.watchService(
-                        type,
-                        domain,
-                        addressFamily,
-                        (action, service) -> {
-                            JSObject status = new JSObject();
-                            status.put("action", action);
-                            status.put("service", jsonifyService(service));
+        getBridge().executeOnMainThread(() -> {
+            try {
+                implementation.watchService(type, domain, addressFamily, (action, service) -> {
+                    JSObject status = new JSObject();
+                    status.put("action", action);
+                    status.put("service", jsonifyService(service));
 
-                            call.setKeepAlive(true);
-                            call.resolve(status);
-                        }
-                    );
-                } catch (RuntimeException e) {
-                    call.reject("Error: " + e.getMessage());
-                }
-            });
+                    call.setKeepAlive(true);
+                    call.resolve(status);
+                });
+            } catch (RuntimeException e) {
+                call.reject("Error: " + e.getMessage());
+            }
+        });
 
         call.setKeepAlive(true);
         call.resolve();
@@ -129,20 +122,18 @@ public class ZeroConfPlugin extends Plugin {
         final String type = call.getString("type");
         final String domain = call.getString("domain");
 
-        getBridge()
-            .executeOnMainThread(() -> {
-                implementation.unwatchService(type, domain);
-                call.resolve();
-            });
+        getBridge().executeOnMainThread(() -> {
+            implementation.unwatchService(type, domain);
+            call.resolve();
+        });
     }
 
     @PluginMethod
     public void close(PluginCall call) {
-        getBridge()
-            .executeOnMainThread(() -> {
-                implementation.close();
-                call.resolve();
-            });
+        getBridge().executeOnMainThread(() -> {
+            implementation.close();
+            call.resolve();
+        });
     }
 
     private static JSObject jsonifyService(NsdServiceInfo service) {
@@ -152,26 +143,32 @@ public class ZeroConfPlugin extends Plugin {
         String serviceType = service.getServiceType();
         String domain = "local."; // Default domain for mDNS
         String type = serviceType;
-        
+
         obj.put("domain", domain);
         obj.put("type", type);
         obj.put("name", service.getServiceName());
         obj.put("port", service.getPort());
-        
+
         // Debug logging
-        Log.d("ZeroConfPlugin", "Service: " + service.getServiceName() + 
-                ", Port: " + service.getPort() + 
-                ", Host: " + (service.getHost() != null ? service.getHost().toString() : "null"));
-        
+        Log.d(
+            "ZeroConfPlugin",
+            "Service: " +
+                service.getServiceName() +
+                ", Port: " +
+                service.getPort() +
+                ", Host: " +
+                (service.getHost() != null ? service.getHost().toString() : "null")
+        );
+
         // Get hostname from host address
         InetAddress host = service.getHost();
         if (host != null) {
             obj.put("hostname", host.getHostName());
-            
+
             // For NsdServiceInfo, we only get one address at a time
             JSArray ipv4Addresses = new JSArray();
             JSArray ipv6Addresses = new JSArray();
-            
+
             String hostAddress = host.getHostAddress();
             if (hostAddress != null) {
                 if (hostAddress.contains(":")) {
@@ -182,7 +179,7 @@ public class ZeroConfPlugin extends Plugin {
                     ipv4Addresses.put(hostAddress);
                 }
             }
-            
+
             obj.put("ipv4Addresses", ipv4Addresses);
             obj.put("ipv6Addresses", ipv6Addresses);
         } else {

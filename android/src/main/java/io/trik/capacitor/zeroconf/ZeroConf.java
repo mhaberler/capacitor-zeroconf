@@ -99,9 +99,8 @@ public class ZeroConf {
         return hostname;
     }
 
-    public NsdServiceInfo registerService(String type, String domain, String name, int port, JSObject props,
-            String addressFamily)
-            throws RuntimeException {
+    public NsdServiceInfo registerService(String type, String domain, String name, int port, JSObject props, String addressFamily)
+        throws RuntimeException {
         Log.d(TAG, "Register " + type + domain);
         if (registrationManager == null) {
             List<InetAddress> selectedAddresses = addresses;
@@ -139,7 +138,7 @@ public class ZeroConf {
     }
 
     public void watchService(String type, String domain, String addressFamily, ZeroConfServiceWatchCallback callback)
-            throws RuntimeException {
+        throws RuntimeException {
         Log.d(TAG, "Watch " + type + domain);
 
         if (browserManager == null) {
@@ -227,8 +226,7 @@ public class ZeroConf {
 
                 @Override
                 public void onUnregistrationFailed(NsdServiceInfo serviceInfo, int errorCode) {
-                    Log.e(TAG,
-                            "Service unregistration failed: " + serviceInfo.getServiceName() + " Error: " + errorCode);
+                    Log.e(TAG, "Service unregistration failed: " + serviceInfo.getServiceName() + " Error: " + errorCode);
                 }
             };
 
@@ -261,6 +259,7 @@ public class ZeroConf {
     }
 
     private class BrowserManager {
+
         private String st;
         private final NsdManager nsdManager;
         private final Map<String, ZeroConfServiceWatchCallback> calls = new HashMap<>();
@@ -288,25 +287,33 @@ public class ZeroConf {
                     Log.d(TAG, "Service found: " + service.getServiceName());
 
                     // Resolve the service to get full details before sending callbacks
-                    nsdManager.resolveService(service, new NsdManager.ResolveListener() {
-                        @Override
-                        public void onResolveFailed(NsdServiceInfo serviceInfo, int errorCode) {
-                            Log.e(TAG, "Resolve failed for: " + serviceInfo.getServiceName() + " Error: " + errorCode);
-                            // Still send the added callback even if resolve fails, but with limited info
-                            sendCallback(ZeroConfServiceWatchCallback.ADDED, serviceInfo);
-                        }
+                    nsdManager.resolveService(
+                        service,
+                        new NsdManager.ResolveListener() {
+                            @Override
+                            public void onResolveFailed(NsdServiceInfo serviceInfo, int errorCode) {
+                                Log.e(TAG, "Resolve failed for: " + serviceInfo.getServiceName() + " Error: " + errorCode);
+                                // Still send the added callback even if resolve fails, but with limited info
+                                sendCallback(ZeroConfServiceWatchCallback.ADDED, serviceInfo);
+                            }
 
-                        @Override
-                        public void onServiceResolved(NsdServiceInfo serviceInfo) {
-                            Log.d(TAG, "Service resolved: " + serviceInfo.getServiceName() +
-                                    ", Port: " + serviceInfo.getPort() +
-                                    ", Host: "
-                                    + (serviceInfo.getHost() != null ? serviceInfo.getHost().toString() : "null"));
-                            // Send both ADDED and RESOLVED callbacks with the resolved service info
-                            sendCallback(ZeroConfServiceWatchCallback.ADDED, serviceInfo);
-                            sendCallback(ZeroConfServiceWatchCallback.RESOLVED, serviceInfo);
+                            @Override
+                            public void onServiceResolved(NsdServiceInfo serviceInfo) {
+                                Log.d(
+                                    TAG,
+                                    "Service resolved: " +
+                                        serviceInfo.getServiceName() +
+                                        ", Port: " +
+                                        serviceInfo.getPort() +
+                                        ", Host: " +
+                                        (serviceInfo.getHost() != null ? serviceInfo.getHost().toString() : "null")
+                                );
+                                // Send both ADDED and RESOLVED callbacks with the resolved service info
+                                sendCallback(ZeroConfServiceWatchCallback.ADDED, serviceInfo);
+                                sendCallback(ZeroConfServiceWatchCallback.RESOLVED, serviceInfo);
+                            }
                         }
-                    });
+                    );
                 }
 
                 @Override
@@ -372,8 +379,7 @@ public class ZeroConf {
     }
 
     private static String getHostNameFromActivity(Activity activity)
-            throws NoSuchMethodException, SecurityException, IllegalAccessException, IllegalArgumentException,
-            InvocationTargetException {
+        throws NoSuchMethodException, SecurityException, IllegalAccessException, IllegalArgumentException, InvocationTargetException {
         @SuppressLint("DiscouragedPrivateApi")
         Method getString = Build.class.getDeclaredMethod("getString", String.class);
         getString.setAccessible(true);
