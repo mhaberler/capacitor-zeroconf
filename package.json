@@ -1,6 +1,6 @@
 {
   "name": "@mhaberler/capacitor-zeroconf-nsd",
-  "version": "5.0.5",
+  "version": "5.1.0",
   "description": "Capacitor ZeroConf plugin",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
@@ -12,6 +12,7 @@
     "dist/",
     "ios/Plugin/",
     "MhaberlerCapacitorZeroconfNsd.podspec",
+    "Package.swift",
     "electron"
   ],
   "author": "Marco Marche",
@@ -37,6 +38,7 @@
   "scripts": {
     "verify": "yarn verify:ios && yarn verify:android && yarn verify:web",
     "verify:ios": "cd ios && pod install && xcodebuild -workspace Plugin.xcworkspace -scheme Plugin && cd ..",
+    "verify:ios:spm": "xcodebuild -scheme MhaberlerCapacitorZeroconfNsd -destination 'generic/platform=iOS'",
     "verify:android": "cd android && ./gradlew clean build test && cd ..",
     "verify:web": "yarn build",
     "lint": "yarn eslint && yarn prettier --check && yarn swiftlint lint",

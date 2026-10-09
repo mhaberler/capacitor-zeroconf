@@ -2,7 +2,17 @@ import Foundation
 import Capacitor
 
 @objc(ZeroConfPlugin)
-public class ZeroConfPlugin: CAPPlugin {
+public class ZeroConfPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "ZeroConfPlugin"
+    public let jsName = "ZeroConf"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "getHostname", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "register", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "unregister", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "watch", returnType: CAPPluginReturnCallback),
+        CAPPluginMethod(name: "unwatch", returnType: CAPPluginReturnPromise)
+    ]
     private let implementation = ZeroConf()
 
     @objc func getHostname(_ call: CAPPluginCall) {

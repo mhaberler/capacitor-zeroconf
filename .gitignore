@@ -60,3 +60,9 @@ captures
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild
 LIESMICH.md
+
+# Swift Package Manager
+# Package.resolved is not checked in: consumers pin their own dependency graph.
+.build/
+.swiftpm/
+Package.resolved
